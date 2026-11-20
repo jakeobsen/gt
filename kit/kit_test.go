@@ -39,7 +39,7 @@ func TestValidateReportsEveryProblem(t *testing.T) {
 		"name must be kebab-case",
 		"title is empty",
 		"another command in this plugin already uses this name",
-		"Run is not set",
+		"set exactly one of Run and Open",
 		"another plugin already uses this name",
 		"has no commands",
 	} {

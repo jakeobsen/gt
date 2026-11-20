@@ -40,6 +40,7 @@ These go at the top of the file, before any `[section]`.
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `theme` | choice | `"auto"` | Colour scheme. One of `"auto"`: follow the terminal's background colour; `"dark"`: colours for a dark background; `"light"`: colours for a light background. |
+| `terminal` | choice | `"auto"` | Where actions like Open in Terminal open a terminal. One of `"auto"`: a new tmux window inside tmux, otherwise a new window of the terminal gt runs in; `"tmux"`: a new tmux window; `"terminal"`: a new Terminal.app window; `"iterm2"`: a new iTerm2 window; `"kitty"`: a new kitty window; `"ghostty"`: a new Ghostty window; `"wezterm"`: a new WezTerm window. |
 
 ## Plugin settings
 

@@ -39,6 +39,8 @@ make install BINDIR=~/.local/bin   # or anywhere else on your PATH
 | `↑` `↓` / `ctrl+p` `ctrl+n` | Move the selection |
 | `pgup` `pgdown` | Move a page at a time |
 | `enter` | Run the selected item's main action |
+| `ctrl+k` | All actions for the selected item, with their shortcuts |
+| `tab` | Open the list's filter (where there is one) |
 | `esc` | Clear the search; with an empty search, go back (or quit) |
 | `ctrl+c` | Quit |
 
@@ -117,6 +119,8 @@ The kit ([`kit/`](kit/)) plays the part `@raycast/api` played: it is what a plug
 | Plugin | Commands | Ported from |
 |---|---|---|
 | [`hello-world`](plugins/hello/) | Say Hello | Raycast `hello-world` |
+
+Plugin actions are listed in each plugin's README. Everywhere, `ctrl+k` opens the actions menu for the selected item, and `tab` opens a list's filter when it has one. Actions that open a terminal follow the `terminal` setting: a new tmux window inside tmux, otherwise a new window of the terminal gt runs in.
 
 ## Layout
 

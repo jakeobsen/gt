@@ -7,15 +7,29 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/sahilm/fuzzy"
+
+	"github.com/jakeobsen/gt/kit"
 )
+
+// accessory is a short coloured tag at the right edge of a row.
+type accessory struct {
+	text  string
+	color kit.Color
+}
 
 // listRow is one selectable row in a list.
 type listRow struct {
-	section   string
-	title     string
-	subtitle  string
-	accessory string
-	keywords  []string
+	// group numbers the section the row is in. With an empty search, a new
+	// group starts with its header, or a divider when it has no header.
+	group     int
+	header    string
+	headerSub string
+
+	title       string
+	subtitle    string
+	accessories []accessory
+	keywords    []string
+	destructive bool
 }
 
 // searchText is what the fuzzy matcher sees for a row. The title comes first,
@@ -32,8 +46,8 @@ type shownRow struct {
 	matched []int
 }
 
-// listView is a fuzzy-filtered, scrollable list of rows with optional section
-// headers. It owns no text input: the screen feeds it the query.
+// listView is a fuzzy-filtered, scrollable list of rows with section headers.
+// It owns no text input: the screen feeds it the query.
 type listView struct {
 	rows   []listRow
 	query  string
@@ -49,6 +63,24 @@ func newListView(rows []listRow) listView {
 	return l
 }
 
+// setRows replaces the rows, keeping the query and, when it is still there,
+// the selected row.
+func (l *listView) setRows(rows []listRow) {
+	prev := ""
+	if i := l.selected(); i >= 0 {
+		prev = l.rows[i].title
+	}
+	l.rows = rows
+	l.setQuery(l.query)
+	for i, s := range l.shown {
+		if l.rows[s.row].title == prev {
+			l.cursor = i
+			break
+		}
+	}
+	l.scrollToCursor()
+}
+
 // setQuery refilters the rows. An empty query shows every row in its original
 // order with section headers; otherwise rows are ranked by match quality and
 // sections are dropped, so the best match is always on top.
@@ -56,7 +88,7 @@ func (l *listView) setQuery(q string) {
 	l.query = q
 	l.cursor, l.offset = 0, 0
 	l.shown = l.shown[:0]
-	if strings.TrimSpace(q) == "" {
+	if l.grouped() {
 		for i := range l.rows {
 			l.shown = append(l.shown, shownRow{row: i})
 		}
@@ -66,11 +98,21 @@ func (l *listView) setQuery(q string) {
 	for i, r := range l.rows {
 		texts[i] = r.searchText()
 	}
+	// The same item can sit in several sections (a project with two tags);
+	// search results drop the section headers, so show it once.
+	seen := map[string]bool{}
 	for _, m := range fuzzy.Find(q, texts) {
-		title := l.rows[m.Index].title
-		l.shown = append(l.shown, shownRow{row: m.Index, matched: titleRunes(title, m.MatchedIndexes)})
+		r := l.rows[m.Index]
+		if key := r.title + "\x00" + r.subtitle; seen[key] {
+			continue
+		} else {
+			seen[key] = true
+		}
+		l.shown = append(l.shown, shownRow{row: m.Index, matched: titleRunes(r.title, m.MatchedIndexes)})
 	}
 }
+
+func (l listView) grouped() bool { return strings.TrimSpace(l.query) == "" }
 
 // titleRunes converts the matcher's byte offsets into rune positions, keeping
 // only those that fall inside the title.
@@ -107,22 +149,36 @@ func (l *listView) setHeight(h int) {
 	l.scrollToCursor()
 }
 
-// line is one rendered line of the list: a section header or a row.
+type lineKind int
+
+const (
+	rowLine lineKind = iota
+	headerLine
+	dividerLine
+)
+
+// line is one rendered line of the list.
 type line struct {
-	header string
-	shown  int // index into shown; -1 for a header
+	kind  lineKind
+	text  string // header title
+	sub   string // header subtitle
+	shown int    // index into shown, for row lines
 }
 
 func (l listView) lines() []line {
 	var out []line
-	lastSection := ""
-	sections := l.query == ""
+	grouped := l.grouped()
 	for i, s := range l.shown {
-		if sec := l.rows[s.row].section; sections && sec != "" && sec != lastSection {
-			out = append(out, line{header: sec, shown: -1})
-			lastSection = sec
+		r := l.rows[s.row]
+		if grouped && (i == 0 || r.group != l.rows[l.shown[i-1].row].group) {
+			switch {
+			case r.header != "":
+				out = append(out, line{kind: headerLine, text: r.header, sub: r.headerSub})
+			case i > 0:
+				out = append(out, line{kind: dividerLine})
+			}
 		}
-		out = append(out, line{shown: i})
+		out = append(out, line{kind: rowLine, shown: i})
 	}
 	return out
 }
@@ -137,13 +193,13 @@ func (l *listView) scrollToCursor() {
 	}
 	at := 0
 	for i, ln := range lines {
-		if ln.shown == l.cursor {
+		if ln.kind == rowLine && ln.shown == l.cursor {
 			at = i
 			break
 		}
 	}
 	top := at
-	if at > 0 && lines[at-1].shown == -1 {
+	if at > 0 && lines[at-1].kind != rowLine {
 		top = at - 1
 	}
 	if top < l.offset {
@@ -155,20 +211,23 @@ func (l *listView) scrollToCursor() {
 	l.offset = max(0, min(l.offset, len(lines)-l.height))
 }
 
-// render draws the visible part of the list, exactly height lines tall.
-func (l listView) render(width int, st styles, emptyText string) string {
+// render draws the visible part of the list, exactly height lines tall. When
+// nothing is shown it draws the empty lines instead.
+func (l listView) render(width int, st styles, empty []string) string {
 	if l.height <= 0 {
 		return ""
 	}
-	var b strings.Builder
+	out := make([]string, l.height)
 	lines := l.lines()
 	if len(lines) == 0 {
-		b.WriteString(st.empty.Render(ansi.Truncate("  "+emptyText, width, "…")))
-		for i := 1; i < l.height; i++ {
-			b.WriteString("\n")
+		for i, e := range empty {
+			if i < len(out) {
+				out[i] = e
+			}
 		}
-		return b.String()
+		return strings.Join(out, "\n")
 	}
+
 	// Line subtitles up in a column after the widest title (across all rows,
 	// so the column doesn't jump while filtering), using at most half the width.
 	titleCol := 0
@@ -177,28 +236,30 @@ func (l listView) render(width int, st styles, emptyText string) string {
 	}
 	titleCol = min(titleCol, (width-3)/2)
 
-	end := min(len(lines), l.offset+l.height)
-	for i := l.offset; i < l.offset+l.height; i++ {
-		if i > l.offset {
-			b.WriteString("\n")
+	for i := 0; i < l.height && l.offset+i < len(lines); i++ {
+		ln := lines[l.offset+i]
+		switch ln.kind {
+		case headerLine:
+			h := "  " + ln.text
+			text := st.section.Render(ansi.Truncate(h, width, "…"))
+			if ln.sub != "" && ansi.StringWidth(h)+2 < width {
+				text += st.subtitle.Render(ansi.Truncate("  "+ln.sub, width-ansi.StringWidth(h), "…"))
+			}
+			out[i] = text
+		case dividerLine:
+			out[i] = st.divider.Render("  " + strings.Repeat("─", max(0, width-4)))
+		default:
+			s := l.shown[ln.shown]
+			out[i] = renderRow(l.rows[s.row], s.matched, ln.shown == l.cursor, width, titleCol, st)
 		}
-		if i >= end {
-			continue
-		}
-		ln := lines[i]
-		if ln.shown == -1 {
-			b.WriteString(st.section.Render(ansi.Truncate("  "+ln.header, width, "…")))
-			continue
-		}
-		s := l.shown[ln.shown]
-		b.WriteString(renderRow(l.rows[s.row], s.matched, ln.shown == l.cursor, width, titleCol, st))
 	}
-	return b.String()
+	return strings.Join(out, "\n")
 }
 
 // renderRow draws one row: marker, title, subtitle (starting at column
-// titleCol when there's room), and an accessory pushed to the right edge.
-// When space runs out the subtitle is cut first, then the title.
+// titleCol when there's room), and accessories pushed to the right edge.
+// When space runs out, accessories drop off first, then the subtitle is cut,
+// then the title.
 func renderRow(r listRow, matched []int, sel bool, width, titleCol int, st styles) string {
 	const gap = 2
 	marker := "  "
@@ -207,12 +268,16 @@ func renderRow(r listRow, matched []int, sel bool, width, titleCol int, st style
 	}
 	avail := width - ansi.StringWidth(marker) - 1 // keep one column free at the right edge
 
-	accessory := r.accessory
-	if ansi.StringWidth(accessory) > avail/3 {
-		accessory = ansi.Truncate(accessory, avail/3, "…")
+	accs := fitAccessories(r.accessories, max(0, avail/2))
+	accWidth := 0
+	for i, a := range accs {
+		if i > 0 {
+			accWidth += gap
+		}
+		accWidth += ansi.StringWidth(a.text)
 	}
-	if accessory != "" {
-		avail -= ansi.StringWidth(accessory) + gap
+	if accWidth > 0 {
+		avail -= accWidth + gap
 	}
 
 	title := ansi.Truncate(r.title, max(avail, 1), "…")
@@ -231,27 +296,61 @@ func renderRow(r listRow, matched []int, sel bool, width, titleCol int, st style
 	}
 
 	bg := func(s lipgloss.Style) lipgloss.Style { return st.onSelected(s, sel) }
+	space := func(n int) string { return bg(lipgloss.NewStyle()).Render(strings.Repeat(" ", max(n, 0))) }
 	titleStyle := bg(st.title)
+	if r.destructive {
+		titleStyle = bg(st.statusError)
+	}
 	if sel {
 		titleStyle = titleStyle.Bold(true)
 	}
+
 	var b strings.Builder
 	b.WriteString(bg(st.marker).Render(marker))
 	b.WriteString(lipgloss.StyleRunes(title, visibleMatches(title, matched), bg(st.match), titleStyle))
 	if subtitle != "" {
-		b.WriteString(bg(lipgloss.NewStyle()).Render(strings.Repeat(" ", colPad+gap)))
+		b.WriteString(space(colPad + gap))
 		b.WriteString(bg(st.subtitle).Render(subtitle))
 	}
 	pad := max(avail, 0)
-	if accessory != "" {
+	if accWidth > 0 {
 		pad += gap
 	}
-	b.WriteString(bg(lipgloss.NewStyle()).Render(strings.Repeat(" ", pad)))
-	if accessory != "" {
-		b.WriteString(bg(st.accessory).Render(accessory))
+	b.WriteString(space(pad))
+	for i, a := range accs {
+		if i > 0 {
+			b.WriteString(space(gap))
+		}
+		b.WriteString(bg(st.colour(a.color)).Render(a.text))
 	}
-	b.WriteString(bg(lipgloss.NewStyle()).Render(" "))
+	b.WriteString(space(1))
 	return b.String()
+}
+
+// fitAccessories drops accessories from the front (the last ones are the most
+// specific, like an age) until they fit in limit columns, truncating the last
+// one if it alone is too wide.
+func fitAccessories(accs []accessory, limit int) []accessory {
+	width := func(as []accessory) int {
+		w := 0
+		for i, a := range as {
+			if i > 0 {
+				w += 2
+			}
+			w += ansi.StringWidth(a.text)
+		}
+		return w
+	}
+	for len(accs) > 1 && width(accs) > limit {
+		accs = accs[1:]
+	}
+	if len(accs) == 1 && width(accs) > limit {
+		if limit < 2 {
+			return nil
+		}
+		accs = []accessory{{text: ansi.Truncate(accs[0].text, limit, "…"), color: accs[0].color}}
+	}
+	return accs
 }
 
 // visibleMatches drops match positions that fell off a truncated title.

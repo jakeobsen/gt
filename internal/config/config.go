@@ -16,6 +16,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/jakeobsen/gt/internal/terminal"
 	"github.com/jakeobsen/gt/kit"
 )
 
@@ -37,6 +38,13 @@ var Core = []kit.Setting{
 			{Value: "dark", Description: "colours for a dark background"},
 			{Value: "light", Description: "colours for a light background"},
 		},
+	},
+	{
+		Key:         "terminal",
+		Kind:        kit.Choice,
+		Default:     terminal.Auto,
+		Description: "Where actions like Open in Terminal open a terminal.",
+		Options:     terminal.Options,
 	},
 }
 
@@ -322,6 +330,10 @@ func sortedKeys(m map[string]any) []string {
 
 // Theme returns the theme setting: "auto", "dark" or "light".
 func (c *Config) Theme() string { return c.core["theme"].(string) }
+
+// Terminal returns the terminal setting, one of the terminal package's
+// strategies.
+func (c *Config) Terminal() string { return c.core["terminal"].(string) }
 
 // Enabled reports whether a plugin's commands should appear in the search.
 func (c *Config) Enabled(plugin string) bool {
