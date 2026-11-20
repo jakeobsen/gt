@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # publish the GitHub release
+
+jobs:
+  release:
+    runs-on: macos-latest
+    env:
+      MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+      MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+      MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+      HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+    steps:
+      - name: Check that every release secret is set
+        run: |
+          missing=0
+          for name in MACOS_SIGN_P12 MACOS_SIGN_PASSWORD MACOS_NOTARY_KEY MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID HOMEBREW_TAP_DEPLOY_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Repository secret $name is not set. See docs/releasing.md."
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # GoReleaser builds the changelog from history
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: make test
+
+      - name: Build, sign, notarize, publish
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.19.0
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the published binary is signed with hardened runtime
+        run: |
+          bin=$(find dist -type f -name gt -path '*darwin_all*' | head -n 1)
+          test -n "$bin" || { echo "::error::universal binary not found in dist/"; exit 1; }
+          codesign --verify --strict --verbose=2 "$bin"
+          info=$(codesign --display --verbose=2 "$bin" 2>&1)
+          echo "$info"
+          grep -q 'Authority=Developer ID Application' <<<"$info"
+          grep -q 'flags=.*runtime' <<<"$info"
+          grep -q '^Timestamp=' <<<"$info"

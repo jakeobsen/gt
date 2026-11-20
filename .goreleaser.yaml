@@ -1,0 +1,87 @@
+# Release configuration for GoReleaser (https://goreleaser.com).
+#
+# Pushing a v* tag runs .github/workflows/release.yml, which runs this:
+# build a universal macOS binary, sign and notarize it, publish a GitHub
+# release, and update the gt cask in the Homebrew tap. docs/releasing.md
+# describes the secrets it needs.
+version: 2
+
+project_name: gt
+
+builds:
+  - id: gt
+    main: ./cmd/gt
+    binary: gt
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# One binary that runs on both Apple silicon and Intel Macs.
+universal_binaries:
+  - id: gt
+    ids: [gt]
+    replace: true
+
+# Sign with a Developer ID Application certificate and notarize with an App
+# Store Connect API key. Skipped when the certificate isn't provided (local
+# snapshot builds); the release workflow refuses to run without it.
+notarize:
+  macos:
+    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
+      ids: [gt]
+      sign:
+        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
+        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+      notarize:
+        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
+        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
+        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        # Wait for Apple's verdict, so a rejected binary fails the release
+        # before anything is published.
+        wait: true
+        timeout: 20m
+
+archives:
+  - id: gt
+    ids: [gt]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_macos"
+    files:
+      - LICENSE
+      - README.md
+      - docs/configuration.md
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: jakeobsen
+    name: gt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs"
+      - "^chore"
+      - "^test"
+
+homebrew_casks:
+  - name: gt
+    ids: [gt]
+    binaries: [gt]
+    homepage: https://github.com/jakeobsen/gt
+    description: Keyboard launcher for the terminal
+    repository:
+      owner: jakeobsen
+      name: homebrew-tap
+      branch: mainline
+      git:
+        url: git@github.com:jakeobsen/homebrew-tap.git
+        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
