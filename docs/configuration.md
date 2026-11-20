@@ -57,3 +57,22 @@ Minimal seed plugin, used as a template for new plugins.
 | Setting | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | true/false | `true` | Show this plugin's commands in the search. |
+
+### Scratch
+
+Create disposable scratch folders and clean up the ones you have stopped touching.
+
+```toml
+[plugins.scratch]
+```
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | true/false | `true` | Show this plugin's commands in the search. |
+| `root` | path | `"~/scratch"` | Folder that holds the scratch folders. Created on first use; a relative path is taken from your home folder. |
+| `editor` | text | `"Visual Studio Code"` | App that opens scratch folders: an app name or a path to a .app. |
+| `open-in-editor` | true/false | `true` | Open a new scratch folder in the editor. When false, its path is copied to the clipboard instead. |
+| `stale-days` | whole number | `7` | A folder counts as stale when nothing anywhere inside it has changed for this many days. Values below 1 mean 7. |
+| `name-style` | choice | `"words"` | Shape of generated folder names. One of `"words"`: brave-otter; `"words-suffix"`: brave-otter-a1b2; `"date-words"`: 2026-08-11-brave-otter; `"hex"`: scratch-8f3a2c4d. |
+| `git-client` | text | `"lazygit"` | Command the git client action runs in a terminal at the folder, e.g. lazygit, gitui or tig. |
+| `delete-mode` | choice | `"trash"` | How folders are removed. One of `"trash"`: move to the Trash, recoverable from Finder; `"permanent"`: delete permanently, not recoverable. |
