@@ -21,30 +21,19 @@ builds:
       - -s -w -X main.version={{ .Version }}
     mod_timestamp: "{{ .CommitTimestamp }}"
 
-# One binary that runs on both Apple silicon and Intel Macs.
+# One binary that runs on both Apple silicon and Intel Macs, signed and
+# notarized before it is archived. The script waits for Apple's verdict, so a
+# rejected binary fails the release before anything is published. It leaves
+# the binary unsigned when there is no signing keychain (local snapshots);
+# the release workflow always provides one.
 universal_binaries:
   - id: gt
     ids: [gt]
     replace: true
-
-# Sign with a Developer ID Application certificate and notarize with an App
-# Store Connect API key. Skipped when the certificate isn't provided (local
-# snapshot builds); the release workflow refuses to run without it.
-notarize:
-  macos:
-    - enabled: '{{ isEnvSet "MACOS_SIGN_P12" }}'
-      ids: [gt]
-      sign:
-        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
-        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
-      notarize:
-        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
-        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
-        key: "{{ .Env.MACOS_NOTARY_KEY }}"
-        # Wait for Apple's verdict, so a rejected binary fails the release
-        # before anything is published.
-        wait: true
-        timeout: 20m
+    hooks:
+      post:
+        - cmd: ./scripts/sign-and-notarize.sh "{{ .Path }}"
+          output: true
 
 archives:
   - id: gt

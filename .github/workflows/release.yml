@@ -10,18 +10,18 @@ permissions:
 jobs:
   release:
     runs-on: macos-latest
-    env:
-      MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
-      MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
-      MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
-      MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
-      MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
-      HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
     steps:
       - name: Check that every release secret is set
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
         run: |
           missing=0
-          for name in MACOS_SIGN_P12 MACOS_SIGN_PASSWORD MACOS_NOTARY_KEY MACOS_NOTARY_KEY_ID MACOS_NOTARY_ISSUER_ID HOMEBREW_TAP_DEPLOY_KEY; do
+          for name in APPLE_CERTIFICATE_BASE64 APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD HOMEBREW_TAP_DEPLOY_KEY; do
             if [ -z "${!name}" ]; then
               echo "::error::Repository secret $name is not set. See docs/releasing.md."
               missing=1
@@ -41,6 +41,46 @@ jobs:
       - name: Test
         run: make test
 
+      # The only step that sees the Apple secrets. It puts the certificate and
+      # the notarization credentials into a temporary keychain using Apple's
+      # own tools, so later steps (GoReleaser included) never see the values.
+      - name: Load signing and notarization credentials into a temporary keychain
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          set +x
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password=$(openssl rand -base64 32)
+          echo "::add-mask::$keychain_password"
+          cert="$RUNNER_TEMP/certificate.p12"
+          trap 'rm -f "$cert"' EXIT
+
+          printf '%s' "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$cert"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$cert" -k "$keychain" -f pkcs12 -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign > /dev/null
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+
+          if ! security find-identity -v -p codesigning "$keychain" | grep -q '"Developer ID Application: '; then
+            echo "::error::APPLE_CERTIFICATE_BASE64 does not contain a Developer ID Application identity"
+            exit 1
+          fi
+
+          # Validates the credentials with Apple and stores them as a profile.
+          xcrun notarytool store-credentials gt-notary \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --keychain "$keychain" > /dev/null
+
+          echo "KEYCHAIN_PATH=$keychain" >> "$GITHUB_ENV"
+
       - name: Build, sign, notarize, publish
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
@@ -49,6 +89,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
 
       - name: Verify the published binary is signed with hardened runtime
         run: |
@@ -60,3 +101,10 @@ jobs:
           grep -q 'Authority=Developer ID Application' <<<"$info"
           grep -q 'flags=.*runtime' <<<"$info"
           grep -q '^Timestamp=' <<<"$info"
+
+      - name: Remove the temporary keychain
+        if: always()
+        run: |
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi

@@ -23,7 +23,7 @@ goto is a keyboard launcher for the terminal, written in Go. `gt` opens a full-s
 
 ## Releases
 
-A pushed `v*` tag runs `.github/workflows/release.yml` → GoReleaser (`.goreleaser.yaml`): universal macOS binary, signed and notarized (`notarize.macos`), GitHub release, `gt` cask pushed to `jakeobsen/homebrew-tap` over SSH with a deploy key. `docs/releasing.md` lists the secrets. Validate config changes with `goreleaser check`; dry-run with `HOMEBREW_TAP_DEPLOY_KEY=unused goreleaser release --snapshot --clean`. Third-party actions are pinned to commit SHAs (version in a trailing comment) because the release job holds signing secrets — keep them pinned when updating.
+A pushed `v*` tag runs `.github/workflows/release.yml`: it loads the certificate into a temporary keychain, then GoReleaser (`.goreleaser.yaml`) builds a universal macOS binary, runs `scripts/sign-and-notarize.sh` on it as a post-hook (`codesign` + `notarytool` via a keychain profile), publishes the GitHub release and pushes the `gt` cask to `jakeobsen/homebrew-tap` over SSH with a deploy key. `docs/releasing.md` lists the secrets. The script must sign only with the identity found in `KEYCHAIN_PATH` (by SHA-1) — `codesign --keychain` alone falls back to other keychains. Secret values must never reach logs or third-party code: only the keychain step gets the `APPLE_*` secrets, nothing echoes them, and the logs are public. Validate config changes with `goreleaser check`; dry-run with `HOMEBREW_TAP_DEPLOY_KEY=unused goreleaser release --snapshot --clean`. Third-party actions are pinned to commit SHAs (version in a trailing comment) because the release job holds signing secrets — keep them pinned when updating.
 
 ## Commands
 
