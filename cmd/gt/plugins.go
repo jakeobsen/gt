@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/jakeobsen/gt/kit"
 	"github.com/jakeobsen/gt/plugins/hello"
+	"github.com/jakeobsen/gt/plugins/nexttask"
 	"github.com/jakeobsen/gt/plugins/scratch"
 	"github.com/jakeobsen/gt/plugins/vscode"
 )
@@ -12,6 +13,7 @@ import (
 func plugins() []kit.Plugin {
 	return []kit.Plugin{
 		hello.Plugin(),
+		nexttask.Plugin(),
 		scratch.Plugin(),
 		vscode.Plugin(),
 	}

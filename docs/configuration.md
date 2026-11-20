@@ -58,6 +58,25 @@ Minimal seed plugin, used as a template for new plugins.
 |---|---|---|---|
 | `enabled` | true/false | `true` | Show this plugin's commands in the search. |
 
+### Next Task
+
+Ask Claude what to work on next, based on your calendar, Jira board, Slack and Gmail.
+
+```toml
+[plugins.next-task]
+```
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | true/false | `true` | Show this plugin's commands in the search. |
+| `model` | choice | `"claude-opus-5-5"` | Model that picks the task. One of `"claude-opus-5-5"`: Opus 5.5: picked better tasks in side-by-side runs; `"claude-sonnet-5-5"`: Sonnet 5.5: faster and cheaper, but cut corners; `"claude-fable-5-1"`: Fable 5.1. |
+| `effort` | choice | `"medium"` | Higher effort reads more carefully but takes longer and costs more. One of `"low"`; `"medium"`; `"high"`; `"xhigh"`: extra high. |
+| `reuse-minutes` | whole number | `30` | Opening Next Task within this many minutes of the last answer shows it instead of asking again. 0 asks every time; ctrl+r always asks. |
+| `meeting-window-minutes` | whole number | `60` | Your next meeting is shown at the top when it starts within this many minutes, and stays until it ends. |
+| `save-for-later` | true/false | `true` | Save tasks and notes to come back to; Claude checks where each stands. When false the actions and section are hidden and the list isn't sent to Claude, but saved items are kept. |
+| `resolved-reactions` | text | `"white_check_mark, heavy_check_mark"` | Slack reactions (comma-separated, colons optional) that mark a request as done. Inserted wherever the workflow says {{resolvedReactions}}. |
+| `claude-path` | path | `"~/.local/bin/claude"` | The claude binary: a path, or a bare name to look up on PATH. |
+
 ### Scratch
 
 Create disposable scratch folders and clean up the ones you have stopped touching.
