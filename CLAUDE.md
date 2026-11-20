@@ -12,7 +12,11 @@ goto is a keyboard launcher for the terminal, written in Go. `gt` opens a full-s
 - **`kit/` mirrors `@raycast/api`.** Plugins are ports of Raycast extensions; translate an extension onto the kit rather than redesigning it. When a plugin needs something the kit lacks, add it to the kit in the same shape as the Raycast API, then use it.
 - **Plugin code never runs on the UI loop.** `Command.Run` runs inside a `tea.Cmd`; `kit.Context` methods turn calls into messages via `Program.Send` (the `bridge` in `internal/app`). Plugin panics are recovered into errors (`safely`).
 - **Settings are declared, never ad hoc.** gt's own settings are `config.Core`; a plugin's are `kit.Plugin.Settings` (plus the automatic `enabled`). `internal/config` checks the user's TOML against the declarations and renders them as `docs/configuration.md` and `gt --default-config`. After changing a declaration run `make docs`; `TestConfigDocsUpToDate` fails until you do.
+- **The kit's Raycast equivalents:** `kit.List` (List, with `Filter` ≈ List.Dropdown, `ShowDetail` + `Item.Detail` ≈ isShowingDetail/List.Item.Detail), `Item.Actions` with `kit.Divider` (ActionPanel and its sections, shown by ctrl+k), `Context.Toast`/`Confirm`/`HUD`/`Close`/`Push`/`Refresh` (showToast, confirmAlert, showHUD, closeMainWindow, Action.Push, revalidate), `Context.Storage` (LocalStorage), `kit.Frecency` (useFrecencySorting), `Context.DataDir` (environment.supportPath), `Command.Arguments`, and built-in actions in `kit/system.go` (Action.Open, ShowInFinder, CopyToClipboard, OpenWith, Trash). Terminal-only additions: `Context.OpenTerminal` (follows the `terminal` setting, `internal/terminal`), `Context.EditText` (opens `$EDITOR` with goto paused) and `Content.RefreshAfter` (quiet polling, superseded by any newer load).
+- **Lists load off the UI loop.** `List.Load` runs in a `tea.Cmd` on open, on `ctx.Refresh()`, on filter changes and when `RefreshAfter` fires; results come back as `contentMsg` addressed to the screen's id. Load may run concurrently with actions, so plugins guard shared state (see `plugins/nexttask`).
+- **Plugin state lives under `~/.local/state/gt`** (`$GT_STATE_DIR`, `$XDG_STATE_HOME`): `plugins/<name>.json` for `Storage`, `plugins/<name>/` for `DataDir`.
 - **`tea.Sequence(busy, run)`** makes the "Running…" status land before the result. Tests unwrap Bubble Tea's unexported `sequenceMsg` by reflection (`asCmds` in `app_test.go`).
+- **Plugin tests never touch the real system.** Clipboard, Trash and `open` go through package variables that tests replace (`copyText`, `trash`, `openPath`, …); `next-task`'s run is tested against a fake `claude` script.
 
 ## Gotchas
 
@@ -20,6 +24,9 @@ goto is a keyboard launcher for the terminal, written in Go. `gt` opens a full-s
 - **Charm v2 lives at `charm.land/...`** (bubbletea, bubbles, lipgloss), not `github.com/charmbracelet/...`. `View()` returns `tea.View`; the alternate screen is `View.AltScreen`, not a program option.
 - **The fuzzy matcher (`sahilm/fuzzy`) returns byte offsets.** Convert them to rune positions before `lipgloss.StyleRunes` (`titleRunes`).
 - **Rendering must fill the window exactly** (tests check width and height). Measure with `ansi.StringWidth`, never `len` — `›`, `↵` and `…` are multi-byte.
+- **The UI test harness runs commands synchronously and drops any that don't return within 500 ms** — those are `tea.Tick` timers; tests deliver `tickMsg` themselves. Never let a plugin action block on something the test doesn't answer (set `harness.answer` for confirmations).
+- **Text inputs don't blink** (`styles.inputStyles`): a blink timer would redraw constantly and fill tests with ticks.
+- **Terminals can't send ⌘.** Shortcuts are ctrl+letter; avoid keys goto or common setups use (enter, esc, tab, ctrl+c, ctrl+k, ctrl+n/ctrl+p, the arrows, and ctrl+a/ctrl+b, which are common tmux prefixes).
 
 ## Releases
 
