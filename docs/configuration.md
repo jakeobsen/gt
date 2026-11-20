@@ -76,3 +76,21 @@ Create disposable scratch folders and clean up the ones you have stopped touchin
 | `name-style` | choice | `"words"` | Shape of generated folder names. One of `"words"`: brave-otter; `"words-suffix"`: brave-otter-a1b2; `"date-words"`: 2026-08-11-brave-otter; `"hex"`: scratch-8f3a2c4d. |
 | `git-client` | text | `"lazygit"` | Command the git client action runs in a terminal at the folder, e.g. lazygit, gitui or tig. |
 | `delete-mode` | choice | `"trash"` | How folders are removed. One of `"trash"`: move to the Trash, recoverable from Finder; `"permanent"`: delete permanently, not recoverable. |
+
+### Visual Studio Code
+
+Search and open projects from the VS Code Project Manager extension.
+
+```toml
+[plugins.vscode-projects]
+```
+
+| Setting | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | true/false | `true` | Show this plugin's commands in the search. |
+| `vscode-app` | path | `"/Applications/Visual Studio Code.app"` | The VS Code app projects open in. It also decides where Project Manager's projects.json is looked for. |
+| `projects-location` | path | `""` | Folder containing projects.json (and any projects_cache_*.json). Empty means Project Manager's own storage folder for vscode-app. |
+| `group-by-tag` | true/false | `true` | Group projects under their tags instead of one list. |
+| `hide-untagged` | true/false | `false` | Hide projects that have no tags. |
+| `hide-disabled` | true/false | `false` | Hide projects whose enabled is false in projects.json. |
+| `git-client` | text | `"lazygit"` | Command the git client action runs in a terminal at the project, e.g. lazygit, gitui or tig. |
